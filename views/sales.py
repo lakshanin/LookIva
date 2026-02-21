@@ -27,9 +27,8 @@ def render():
                     selected = st.selectbox("Product (in stock only)", list(product_options.keys()))
                     product = product_options[selected]
 
-                    quantity = st.number_input("Quantity", min_value=1,
-                                               max_value=int(product["available"]),
-                                               value=1, step=1)
+                    quantity = st.number_input("Quantity", value=1, step=1,
+                                               help="Enter positive for sales, negative for returns (e.g., -1 to process a return)")
 
                 with col2:
                     sale_type = st.radio("Sale Type", ["Indirect", "Direct"], horizontal=True,
@@ -54,17 +53,27 @@ def render():
                 margin = (selling_price_retailer - cost) * quantity
                 revenue = selling_price_retailer * quantity
 
-                st.markdown(f"""
-                **Sale Preview:**
-                - Cost per unit: Rs. {cost:,.0f}
-                - Your revenue: Rs. {revenue:,.0f}
-                - **Margin: Rs. {margin:,.0f}** {'✅' if margin > 0 else '⚠️'}
-                """)
+                if quantity < 0:
+                    st.warning(f"""
+                    **⏎ Sale Return Preview:**
+                    - Cost per unit: Rs. {cost:,.0f}
+                    - Revenue refund: Rs. {abs(revenue):,.0f}
+                    - **Margin impact: Rs. {margin:,.0f}** (Returning {abs(quantity)} items)
+                    """)
+                else:
+                    st.markdown(f"""
+                    **Sale Preview:**
+                    - Cost per unit: Rs. {cost:,.0f}
+                    - Your revenue: Rs. {revenue:,.0f}
+                    - **Margin: Rs. {margin:,.0f}** {'✅' if margin > 0 else '⚠️'}
+                    """)
 
                 submitted = st.form_submit_button("Record Sale", type="primary")
 
                 if submitted:
-                    if selling_price_customer <= 0:
+                    if quantity == 0:
+                        st.error("Quantity cannot be zero!")
+                    elif selling_price_customer <= 0:
                         st.error("Please enter a valid selling price!")
                     elif sale_type == "Indirect" and selling_price_retailer <= 0:
                         st.error("Please enter a valid retailer price!")
@@ -79,7 +88,10 @@ def render():
                                 sale_type=sale_type,
                                 remarks=remarks or None,
                             )
-                            st.success(f"Sale recorded: {quantity}x {product['product_name']} — Margin: Rs. {margin:,.0f}")
+                            if quantity < 0:
+                                st.success(f"⏎ Return processed: {abs(quantity)}x {product['product_name']} returned — Margin impact: Rs. {margin:,.0f}")
+                            else:
+                                st.success(f"Sale recorded: {quantity}x {product['product_name']} — Margin: Rs. {margin:,.0f}")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error: {e}")
@@ -108,11 +120,12 @@ def render():
             revenue = s["selling_price_retailer"] * s["quantity"]
             total_revenue += revenue
             total_margin += margin
+            qty_display = f"⏎ {s['quantity']}" if s["quantity"] < 0 else s["quantity"]
             data.append({
                 "Date": s["date"],
                 "Batch ID": s["batch_id"],
                 "Product": s["product_name"] or s["batch_id"],
-                "Qty": s["quantity"],
+                "Qty": qty_display,
                 "Customer Price": f"Rs. {s['selling_price_customer']:,.0f}",
                 "Your Price": f"Rs. {s['selling_price_retailer']:,.0f}",
                 "Margin": f"Rs. {margin:,.0f}",
@@ -123,8 +136,8 @@ def render():
         st.dataframe(df, width="stretch", hide_index=True)
 
         mc1, mc2, mc3 = st.columns(3)
-        mc1.metric("Total Sales", len(data))
-        mc2.metric("Total Revenue", f"Rs. {total_revenue:,.0f}")
-        mc3.metric("Total Margin", f"Rs. {total_margin:,.0f}")
+        mc1.metric("Total Transactions", len(data))
+        mc2.metric("Net Revenue (incl. returns)", f"Rs. {total_revenue:,.0f}")
+        mc3.metric("Net Margin (incl. returns)", f"Rs. {total_margin:,.0f}")
     else:
         st.info("No sales found for the selected filters.")
